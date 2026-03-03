@@ -7,6 +7,19 @@ No GUI imports; safe to import from tests or other scripts.
 from pathlib import Path
 import pandas as pd
 
+_ENCODINGS = ["utf-8", "utf-8-sig", "latin-1"]
+
+
+def _read_csv(path: str, **kwargs) -> pd.DataFrame:
+    """Try common encodings in order; raise the last error if all fail."""
+    last_exc: Exception = RuntimeError("No encodings tried")
+    for enc in _ENCODINGS:
+        try:
+            return _read_csv(path, encoding=enc, **kwargs)
+        except UnicodeDecodeError as exc:
+            last_exc = exc
+    raise last_exc
+
 
 def validate_headers(file_paths: list[str]) -> tuple[bool, dict[str, str]]:
     """
@@ -24,7 +37,7 @@ def validate_headers(file_paths: list[str]) -> tuple[bool, dict[str, str]]:
 
     # Read reference headers from the first file
     try:
-        ref_df = pd.read_csv(file_paths[0], nrows=0)
+        ref_df = _read_csv(file_paths[0], nrows=0)
         ref_cols = [str(c).strip() for c in ref_df.columns.tolist()]
     except Exception as exc:
         ref_name = Path(file_paths[0]).name
@@ -35,7 +48,7 @@ def validate_headers(file_paths: list[str]) -> tuple[bool, dict[str, str]]:
     for path in file_paths[1:]:
         name = Path(path).name
         try:
-            df = pd.read_csv(path, nrows=0)
+            df = _read_csv(path, nrows=0)
             cols = [str(c).strip() for c in df.columns.tolist()]
         except Exception as exc:
             errors[name] = f"Could not read file: {exc}"
@@ -85,7 +98,7 @@ def group_files_by_headers(
     for path in file_paths:
         name = Path(path).name
         try:
-            df = pd.read_csv(path, nrows=0)
+            df = _read_csv(path, nrows=0)
             key = frozenset(str(c).strip() for c in df.columns)
         except Exception as exc:
             errors[name] = f"Could not read file: {exc}"
@@ -113,7 +126,7 @@ def _combine_group(file_paths: list[str], output_path: Path) -> tuple[bool, str]
     for path in file_paths:
         name = Path(path).name
         try:
-            df = pd.read_csv(path)
+            df = _read_csv(path)
         except Exception as exc:
             return False, f"Failed to read '{name}': {exc}"
 
