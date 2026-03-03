@@ -15,7 +15,7 @@ def _read_csv(path: str, **kwargs) -> pd.DataFrame:
     last_exc: Exception = RuntimeError("No encodings tried")
     for enc in _ENCODINGS:
         try:
-            return _read_csv(path, encoding=enc, **kwargs)
+            return pd.read_csv(path, encoding=enc, **kwargs)
         except UnicodeDecodeError as exc:
             last_exc = exc
     raise last_exc
