@@ -1,5 +1,6 @@
 """
-combiner.py — Pure logic for reading, validating, and merging Excel files.
+combiner.py — Pure logic for reading, validating, and merging CSV files.
+Output is written as an Excel workbook (.xlsx) with a File Index sheet.
 No GUI imports; safe to import from tests or other scripts.
 """
 
@@ -14,7 +15,7 @@ def validate_headers(file_paths: list[str]) -> tuple[bool, dict[str, str]]:
     Returns:
         (True, {})  — all headers match
         (False, {"input": "..."})  — fewer than 2 files provided
-        (False, {"file1.xlsx": "...", ...})  — per-file mismatch details
+        (False, {"file1.csv": "...", ...})  — per-file mismatch details
     """
     if len(file_paths) < 2:
         return False, {"input": "At least 2 files are required for validation."}
@@ -23,7 +24,7 @@ def validate_headers(file_paths: list[str]) -> tuple[bool, dict[str, str]]:
 
     # Read reference headers from the first file
     try:
-        ref_df = pd.read_excel(file_paths[0], nrows=0, engine="openpyxl")
+        ref_df = pd.read_csv(file_paths[0], nrows=0)
         ref_cols = [str(c).strip() for c in ref_df.columns.tolist()]
     except Exception as exc:
         ref_name = Path(file_paths[0]).name
@@ -34,7 +35,7 @@ def validate_headers(file_paths: list[str]) -> tuple[bool, dict[str, str]]:
     for path in file_paths[1:]:
         name = Path(path).name
         try:
-            df = pd.read_excel(path, nrows=0, engine="openpyxl")
+            df = pd.read_csv(path, nrows=0)
             cols = [str(c).strip() for c in df.columns.tolist()]
         except Exception as exc:
             errors[name] = f"Could not read file: {exc}"
@@ -65,11 +66,11 @@ def validate_headers(file_paths: list[str]) -> tuple[bool, dict[str, str]]:
     return True, {}
 
 
-def combine_excel_files(
+def combine_csv_files(
     file_paths: list[str], output_path: str
 ) -> tuple[bool, str]:
     """
-    Validate headers, concatenate all first sheets, and write output.
+    Validate headers, concatenate all CSV files, and write an Excel output.
 
     Output workbook has two sheets:
       - "Combined Data": all rows concatenated
@@ -95,7 +96,7 @@ def combine_excel_files(
     for path in file_paths:
         name = Path(path).name
         try:
-            df = pd.read_excel(path, sheet_name=0, engine="openpyxl")
+            df = pd.read_csv(path)
         except Exception as exc:
             return False, f"Failed to read '{name}': {exc}"
 

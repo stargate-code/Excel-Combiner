@@ -1,6 +1,7 @@
 """
-main.py — tkinter GUI for Excel Combiner.
+main.py — tkinter GUI for CSV Combiner.
 Calls combiner.py for all business logic; runs combine in a background thread.
+Supports drag-and-drop of .csv files via tkinterdnd2.
 """
 
 import threading
@@ -9,13 +10,15 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, scrolledtext
 
+from tkinterdnd2 import DND_FILES, TkinterDnD
+
 import combiner
 
 
-class ExcelCombinerApp(tk.Tk):
+class ExcelCombinerApp(TkinterDnD.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Excel Combiner")
+        self.title("CSV Combiner")
         self.resizable(True, True)
         self.minsize(600, 500)
 
@@ -32,7 +35,7 @@ class ExcelCombinerApp(tk.Tk):
         padding = {"padx": 10, "pady": 5}
 
         # ── Section 1: File List ──────────────────────────────────────── #
-        file_frame = tk.LabelFrame(self, text="Excel Files to Combine")
+        file_frame = tk.LabelFrame(self, text="CSV Files to Combine (or drag & drop here)")
         file_frame.pack(fill=tk.BOTH, expand=True, **padding)
 
         list_frame = tk.Frame(file_frame)
@@ -48,6 +51,10 @@ class ExcelCombinerApp(tk.Tk):
         scrollbar.config(command=self.listbox.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Register the listbox as a drag-and-drop target
+        self.listbox.drop_target_register(DND_FILES)
+        self.listbox.dnd_bind("<<Drop>>", self._on_drop)
 
         btn_frame = tk.Frame(file_frame)
         btn_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
@@ -97,25 +104,35 @@ class ExcelCombinerApp(tk.Tk):
     #  File List Handlers                                                  #
     # ------------------------------------------------------------------ #
 
+    def _try_add_path(self, path: str) -> bool:
+        """Add a single file path if it's a valid .csv not already in the list.
+        Returns True if added."""
+        if not path.lower().endswith(".csv"):
+            self._log(f"Skipped '{Path(path).name}': only .csv files are supported.", tag="error")
+            return False
+        if path in self.file_paths:
+            self._log(f"Warning: '{Path(path).name}' is already in the list — skipped.")
+            return False
+        self.file_paths.append(path)
+        self.listbox.insert(tk.END, Path(path).name)
+        return True
+
     def _add_files(self):
         paths = filedialog.askopenfilenames(
-            title="Select Excel Files",
-            filetypes=[("Excel files", "*.xlsx")],
+            title="Select CSV Files",
+            filetypes=[("CSV files", "*.csv")],
         )
-        added = 0
-        for path in paths:
-            if path.lower().endswith(".xls") and not path.lower().endswith(".xlsx"):
-                self._log(f"Skipped '{Path(path).name}': .xls files are not supported (xlsx only).", tag="error")
-                continue
-            if path in self.file_paths:
-                self._log(f"Warning: '{Path(path).name}' is already in the list — skipped.", tag=None)
-                continue
-            self.file_paths.append(path)
-            self.listbox.insert(tk.END, Path(path).name)
-            added += 1
-
+        added = sum(self._try_add_path(p) for p in paths)
         if added:
             self._log(f"Added {added} file(s).")
+            self._maybe_set_default_output()
+
+    def _on_drop(self, event):
+        # tk.splitlist handles paths with spaces wrapped in {}
+        paths = self.tk.splitlist(event.data)
+        added = sum(self._try_add_path(p) for p in paths)
+        if added:
+            self._log(f"Added {added} file(s) via drag & drop.")
             self._maybe_set_default_output()
 
     def _remove_selected(self):
@@ -199,7 +216,7 @@ class ExcelCombinerApp(tk.Tk):
         self._log("Combining files…")
 
         def _worker():
-            ok, msg = combiner.combine_excel_files(self.file_paths, output_path)
+            ok, msg = combiner.combine_csv_files(self.file_paths, output_path)
             self.after(0, lambda: self._on_combine_done(ok, msg))
 
         t = threading.Thread(target=_worker, daemon=True)
