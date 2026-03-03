@@ -6,14 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Excel Combiner — a desktop GUI tool for merging multiple Excel files (with matching column headers) into a single output workbook. The output contains a "Combined Data" sheet and a "File Index" sheet showing source file provenance.
 
-## Git Commit Policy
+## Git Commit & Push Policy
 
-**Commit frequently throughout every session** to ensure no work is lost. Specifically:
+**Commit and push after every code change** to keep GitHub in sync. Specifically:
 - Commit after every meaningful change (new file, new feature, bug fix, refactor)
 - Commit before and after any significant structural change
-- Never leave a session with uncommitted changes
+- Never leave a session with uncommitted or unpushed changes
 - Use descriptive commit messages that explain *what* and *why*
-- Always run `git status` at the end of a session to confirm everything is committed
+- Always run `git push` immediately after committing
+- Always run `git status` at the end of a session to confirm everything is committed and pushed
 
 ## Setup & Usage
 
