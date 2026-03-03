@@ -193,14 +193,29 @@ class ExcelCombinerApp(TkinterDnD.Tk):
             self._log("Please add at least 2 files before validating.", tag="error")
             return
 
-        self._log("Validating headers…")
-        valid, errors = combiner.validate_headers(self.file_paths)
-        if valid:
-            self._log("Headers match across all files.", tag="success")
-        else:
-            self._log("Header validation failed:", tag="error")
+        self._log("Analyzing file formats…")
+        groups, errors = combiner.group_files_by_headers(self.file_paths)
+
+        if errors:
             for name, msg in errors.items():
-                self._log(f"  {name}: {msg}", tag="error")
+                self._log(f"  Could not read '{name}': {msg}", tag="error")
+
+        if not groups:
+            return
+
+        if len(groups) == 1:
+            self._log(
+                f"All {len(self.file_paths)} files share the same format — will produce 1 output file.",
+                tag="success",
+            )
+        else:
+            self._log(
+                f"Found {len(groups)} distinct format(s) — will produce {len(groups)} output files:",
+                tag="success",
+            )
+            for i, group in enumerate(groups, 1):
+                names = ", ".join(Path(p).name for p in group)
+                self._log(f"  Group {i} ({len(group)} file(s)): {names}")
 
     def _combine(self):
         if len(self.file_paths) < 2:

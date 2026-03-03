@@ -66,33 +66,50 @@ def validate_headers(file_paths: list[str]) -> tuple[bool, dict[str, str]]:
     return True, {}
 
 
-def combine_csv_files(
-    file_paths: list[str], output_path: str
-) -> tuple[bool, str]:
+def group_files_by_headers(
+    file_paths: list[str],
+) -> tuple[list[list[str]], dict[str, str]]:
     """
-    Validate headers, concatenate all CSV files, and write an Excel output.
-
-    Output workbook has two sheets:
-      - "Combined Data": all rows concatenated
-      - "File Index": File Name, Rows Combined, Full Path
+    Group files by their column set (order-independent).
+    Files with the same set of column names land in the same group.
 
     Returns:
-        (True, "Success message")
-        (False, "Error message")
+        (groups, errors)
+        - groups: list of file-path lists; each inner list shares the same columns
+        - errors: dict of filename -> error message for unreadable files
     """
-    # --- Validate headers first ---
-    valid, header_errors = validate_headers(file_paths)
-    if not valid:
-        lines = ["Header validation failed:"]
-        for key, msg in header_errors.items():
-            lines.append(f"  {key}: {msg}")
-        return False, "\n".join(lines)
+    groups: list[list[str]] = []
+    group_keys: list[frozenset] = []
+    errors: dict[str, str] = {}
 
+    for path in file_paths:
+        name = Path(path).name
+        try:
+            df = pd.read_csv(path, nrows=0)
+            key = frozenset(str(c).strip() for c in df.columns)
+        except Exception as exc:
+            errors[name] = f"Could not read file: {exc}"
+            continue
+
+        placed = False
+        for i, existing_key in enumerate(group_keys):
+            if existing_key == key:
+                groups[i].append(path)
+                placed = True
+                break
+        if not placed:
+            groups.append([path])
+            group_keys.append(key)
+
+    return groups, errors
+
+
+def _combine_group(file_paths: list[str], output_path: Path) -> tuple[bool, str]:
+    """Concatenate a single group of CSV files (assumed same columns) into one xlsx."""
     frames: list[pd.DataFrame] = []
     index_rows: list[dict] = []
     warnings: list[str] = []
 
-    # --- Read each file ---
     for path in file_paths:
         name = Path(path).name
         try:
@@ -101,7 +118,6 @@ def combine_csv_files(
             return False, f"Failed to read '{name}': {exc}"
 
         row_count = len(df)
-
         if row_count == 0:
             warnings.append(f"'{name}' is header-only (0 data rows); included with 0 rows.")
 
@@ -114,35 +130,78 @@ def combine_csv_files(
             }
         )
 
-    # --- Concatenate ---
     combined = pd.concat(frames, ignore_index=True)
     file_index = pd.DataFrame(index_rows, columns=["File Name", "Rows Combined", "Full Path"])
 
-    # --- Ensure output directory exists ---
-    out = Path(output_path)
-    out.parent.mkdir(parents=True, exist_ok=True)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # --- Write output workbook ---
     try:
-        with pd.ExcelWriter(out, engine="openpyxl") as writer:
+        with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
             combined.to_excel(writer, sheet_name="Combined Data", index=False)
             file_index.to_excel(writer, sheet_name="File Index", index=False)
     except PermissionError:
         return (
             False,
-            f"Permission denied writing to '{out.name}'. "
+            f"Permission denied writing to '{output_path.name}'. "
             "The file may be open in Excel — please close it and try again.",
         )
     except Exception as exc:
-        return False, f"Failed to write output file: {exc}"
+        return False, f"Failed to write '{output_path.name}': {exc}"
 
-    total_rows = len(combined)
-    msg_parts = [
-        f"Success! Combined {total_rows} rows from {len(file_paths)} files.",
-        f"Output saved to: {out.resolve()}",
-    ]
+    msg_parts = [f"{len(combined)} rows from {len(file_paths)} file(s) → {output_path.resolve()}"]
     if warnings:
-        msg_parts.append("Warnings:")
-        msg_parts.extend(f"  {w}" for w in warnings)
-
+        msg_parts.extend(f"  Warning: {w}" for w in warnings)
     return True, "\n".join(msg_parts)
+
+
+def combine_csv_files(
+    file_paths: list[str], output_path: str
+) -> tuple[bool, str]:
+    """
+    Group files by column format, then combine each group into its own xlsx.
+
+    - Single group  → writes to output_path directly
+    - Multiple groups → writes to output_stem_group_1.xlsx, _group_2.xlsx, …
+
+    Output workbooks each have two sheets:
+      "Combined Data" and "File Index" (File Name, Rows Combined, Full Path).
+
+    Returns:
+        (True, "Success message")
+        (False, "Error message")
+    """
+    if len(file_paths) < 2:
+        return False, "At least 2 files are required."
+
+    groups, read_errors = group_files_by_headers(file_paths)
+
+    if read_errors:
+        lines = ["Could not read some files:"]
+        lines.extend(f"  {name}: {msg}" for name, msg in read_errors.items())
+        return False, "\n".join(lines)
+
+    if not groups:
+        return False, "No readable files found."
+
+    out = Path(output_path)
+
+    # Determine output paths per group
+    if len(groups) == 1:
+        output_paths = [out]
+    else:
+        output_paths = [
+            out.parent / f"{out.stem}_group_{i + 1}{out.suffix}"
+            for i in range(len(groups))
+        ]
+
+    result_lines = [
+        f"Found {len(groups)} format group(s) across {len(file_paths)} files:",
+    ]
+
+    for i, (group, group_out) in enumerate(zip(groups, output_paths), 1):
+        ok, msg = _combine_group(group, group_out)
+        if not ok:
+            return False, msg
+        result_lines.append(f"  Group {i}: {msg}")
+
+    return True, "\n".join(result_lines)
