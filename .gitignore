@@ -32,5 +32,8 @@ env/
 *.swp
 *.swo
 
+# PyInstaller
+*.spec
+
 # Logs
 *.log
